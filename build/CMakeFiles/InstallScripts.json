@@ -1,0 +1,9 @@
+{
+	"InstallScripts" : 
+	[
+		"/home/dhc/FlowStudy-Judge/build/cmake_install.cmake",
+		"/home/dhc/FlowStudy-Judge/build/src/cmake_install.cmake",
+		"/home/dhc/FlowStudy-Judge/build/test/cmake_install.cmake"
+	],
+	"Parallel" : false
+}
