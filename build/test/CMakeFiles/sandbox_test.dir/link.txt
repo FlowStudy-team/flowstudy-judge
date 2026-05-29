@@ -1,0 +1,1 @@
+/usr/bin/c++ -O3 -DNDEBUG -Wl,--dependency-file=CMakeFiles/sandbox_test.dir/link.d CMakeFiles/sandbox_test.dir/sandbox_test.cpp.o -o sandbox_test
