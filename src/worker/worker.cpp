@@ -86,6 +86,18 @@ void Worker::on_message(uint64_t delivery_tag, const std::string& body) {
     db_result.error_message = result.error_message;
     db_result.compiler_output = result.compiler_output;
     db_result.failed_testcase = result.failed_testcase_index;
+    for (const auto& item : result.case_results) {
+        JudgeCaseResult case_result;
+        case_result.testcase_id = item.testcase_id;
+        case_result.case_index = item.case_index;
+        case_result.status = to_string(item.status);
+        case_result.time_used_ms = item.time_used_ms;
+        case_result.memory_used_kb = item.memory_used_kb;
+        case_result.actual_output = item.actual_output;
+        case_result.expected_output = item.expected_output;
+        case_result.error_message = item.error_message;
+        db_result.case_results.push_back(std::move(case_result));
+    }
 
     // Ping MySQL before writing (connection may have timed out)
     db_->ping();

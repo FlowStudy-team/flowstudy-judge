@@ -2,8 +2,20 @@
 
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "config/config.h"
+
+struct JudgeCaseResult {
+    uint64_t testcase_id = 0;
+    int case_index = 0;
+    std::string status;
+    int time_used_ms = 0;
+    int memory_used_kb = 0;
+    std::string actual_output;
+    std::string expected_output;
+    std::string error_message;
+};
 
 struct JudgeResult {
     uint64_t submission_id = 0;
@@ -13,6 +25,7 @@ struct JudgeResult {
     std::string error_message;
     std::string compiler_output;
     int failed_testcase = -1;
+    std::vector<JudgeCaseResult> case_results;
 };
 
 class MySQLClient {

@@ -16,9 +16,9 @@ struct RabbitMQConfig {
 struct MySQLConfig {
     std::string hostname = "127.0.0.1";
     int port = 3306;
-    std::string username = "judge";
-    std::string password = "judge_pass";
-    std::string database = "online_judge";
+    std::string username = "root";
+    std::string password = "";
+    std::string database = "flowstudy";
 };
 
 struct IsolateConfig {

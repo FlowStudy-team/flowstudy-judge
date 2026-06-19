@@ -10,9 +10,9 @@
     "mysql": {
         "hostname": "127.0.0.1",
         "port": 3306,
-        "username": "judge",
-        "password": "judge_pass",
-        "database": "online_judge"
+        "username": "root",
+        "password": "",
+        "database": "flowstudy"
     },
     "isolate": {
         "binary_path": "/usr/local/bin/isolate",

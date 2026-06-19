@@ -3,10 +3,10 @@
 #include <mysql/mysql.h>
 #include <spdlog/spdlog.h>
 #include <cstring>
+#include <sstream>
 
 struct MySQLClient::Impl {
     MYSQL* conn = nullptr;
-    MYSQL_STMT* stmt = nullptr;
     MySQLConfig config;
     bool connected = false;
 
@@ -19,10 +19,6 @@ MySQLClient::MySQLClient(const MySQLConfig& cfg)
 }
 
 MySQLClient::~MySQLClient() {
-    if (pimpl_->stmt) {
-        mysql_stmt_close(pimpl_->stmt);
-        pimpl_->stmt = nullptr;
-    }
     if (pimpl_->conn) {
         mysql_close(pimpl_->conn);
         pimpl_->conn = nullptr;
@@ -54,35 +50,27 @@ bool MySQLClient::connect() {
         return false;
     }
 
-    // Prepare the UPDATE statement
-    const char* query =
-        "UPDATE submissions SET "
-        "status = ?, "
-        "time_used_ms = ?, "
-        "memory_used_kb = ?, "
-        "error_message = ?, "
-        "compiler_output = ?, "
-        "failed_testcase = ?, "
-        "judged_at = NOW() "
-        "WHERE submission_id = ?";
-
-    pimpl_->stmt = mysql_stmt_init(pimpl_->conn);
-    if (!pimpl_->stmt) {
-        spdlog::error("mysql_stmt_init failed");
-        return false;
-    }
-
-    if (mysql_stmt_prepare(pimpl_->stmt, query, std::strlen(query)) != 0) {
-        spdlog::error("mysql_stmt_prepare failed: {}",
-                      mysql_stmt_error(pimpl_->stmt));
-        return false;
-    }
-
     pimpl_->connected = true;
     spdlog::info("MySQL connected to {}:{}/{}",
                  pimpl_->config.hostname, pimpl_->config.port,
                  pimpl_->config.database);
     return true;
+}
+
+static std::string escape_sql(MYSQL* conn, const std::string& value) {
+    std::string escaped;
+    escaped.resize(value.size() * 2 + 1);
+    unsigned long len = mysql_real_escape_string(
+        conn, escaped.data(), value.c_str(), static_cast<unsigned long>(value.size()));
+    escaped.resize(len);
+    return escaped;
+}
+
+static std::string nullable_sql(MYSQL* conn, const std::string& value) {
+    if (value.empty()) {
+        return "NULL";
+    }
+    return "'" + escape_sql(conn, value) + "'";
 }
 
 bool MySQLClient::update_submission(const JudgeResult& result) {
@@ -91,66 +79,62 @@ bool MySQLClient::update_submission(const JudgeResult& result) {
         return false;
     }
 
-    // Bind parameters
-    // status (string), time_used_ms (int), memory_used_kb (int),
-    // error_message (string), compiler_output (string),
-    // failed_testcase (int), submission_id (uint64_t)
-    enum { NUM_PARAMS = 7 };
-
-    MYSQL_BIND bind[NUM_PARAMS];
-    std::memset(bind, 0, sizeof(bind));
-
-    // status
-    unsigned long status_len = result.status.size();
-    bind[0].buffer_type = MYSQL_TYPE_STRING;
-    bind[0].buffer = const_cast<char*>(result.status.c_str());
-    bind[0].buffer_length = status_len;
-    bind[0].length = &status_len;
-
-    // time_used_ms
-    int time_used = result.time_used_ms;
-    bind[1].buffer_type = MYSQL_TYPE_LONG;
-    bind[1].buffer = &time_used;
-
-    // memory_used_kb
-    int memory_used = result.memory_used_kb;
-    bind[2].buffer_type = MYSQL_TYPE_LONG;
-    bind[2].buffer = &memory_used;
-
-    // error_message
-    unsigned long error_len = result.error_message.empty() ? 0 : result.error_message.size();
-    bind[3].buffer_type = MYSQL_TYPE_STRING;
-    bind[3].buffer = error_len > 0 ? const_cast<char*>(result.error_message.c_str()) : nullptr;
-    bind[3].buffer_length = error_len;
-    bind[3].length = &error_len;
-
-    // compiler_output
-    unsigned long compiler_len = result.compiler_output.empty() ? 0 : result.compiler_output.size();
-    bind[4].buffer_type = MYSQL_TYPE_STRING;
-    bind[4].buffer = compiler_len > 0 ? const_cast<char*>(result.compiler_output.c_str()) : nullptr;
-    bind[4].buffer_length = compiler_len;
-    bind[4].length = &compiler_len;
-
-    // failed_testcase
-    int failed_tc = result.failed_testcase;
-    bind[5].buffer_type = MYSQL_TYPE_LONG;
-    bind[5].buffer = &failed_tc;
-
-    // submission_id
-    unsigned long long sub_id = result.submission_id;
-    bind[6].buffer_type = MYSQL_TYPE_LONGLONG;
-    bind[6].buffer = &sub_id;
-    bind[6].is_unsigned = 1;
-
-    if (mysql_stmt_bind_param(pimpl_->stmt, bind) != 0) {
-        spdlog::error("mysql_stmt_bind_param failed: {}",
-                      mysql_stmt_error(pimpl_->stmt));
+    if (mysql_query(pimpl_->conn, "START TRANSACTION") != 0) {
+        spdlog::error("START TRANSACTION failed: {}", mysql_error(pimpl_->conn));
         return false;
     }
 
-    if (mysql_stmt_execute(pimpl_->stmt) != 0) {
-        spdlog::error("mysql_stmt_execute failed: {}",
-                      mysql_stmt_error(pimpl_->stmt));
+    std::ostringstream update;
+    update << "UPDATE fs_submission SET "
+           << "status = '" << escape_sql(pimpl_->conn, result.status) << "', "
+           << "score = " << (result.status == "ACCEPTED" ? 100 : 0) << ", "
+           << "time_used_ms = " << result.time_used_ms << ", "
+           << "memory_used_kb = " << result.memory_used_kb << ", "
+           << "compile_message = " << nullable_sql(pimpl_->conn, result.compiler_output) << ", "
+           << "runtime_message = " << nullable_sql(pimpl_->conn, result.error_message) << ", "
+           << "updated_at = NOW() "
+           << "WHERE id = " << result.submission_id;
+
+    if (mysql_query(pimpl_->conn, update.str().c_str()) != 0) {
+        spdlog::error("Update fs_submission failed: {}", mysql_error(pimpl_->conn));
+        mysql_query(pimpl_->conn, "ROLLBACK");
+        return false;
+    }
+
+    std::ostringstream clear_cases;
+    clear_cases << "DELETE FROM fs_judge_case_result WHERE submission_id = " << result.submission_id;
+    if (mysql_query(pimpl_->conn, clear_cases.str().c_str()) != 0) {
+        spdlog::error("Delete fs_judge_case_result failed: {}", mysql_error(pimpl_->conn));
+        mysql_query(pimpl_->conn, "ROLLBACK");
+        return false;
+    }
+
+    for (const auto& item : result.case_results) {
+        std::ostringstream insert_case;
+        insert_case << "INSERT INTO fs_judge_case_result ("
+                    << "submission_id, testcase_id, case_index, status, time_used_ms, memory_used_kb, "
+                    << "actual_output, expected_output, error_message"
+                    << ") VALUES ("
+                    << result.submission_id << ", "
+                    << (item.testcase_id == 0 ? "NULL" : std::to_string(item.testcase_id)) << ", "
+                    << item.case_index << ", "
+                    << "'" << escape_sql(pimpl_->conn, item.status) << "', "
+                    << item.time_used_ms << ", "
+                    << item.memory_used_kb << ", "
+                    << nullable_sql(pimpl_->conn, item.actual_output) << ", "
+                    << nullable_sql(pimpl_->conn, item.expected_output) << ", "
+                    << nullable_sql(pimpl_->conn, item.error_message) << ")";
+
+        if (mysql_query(pimpl_->conn, insert_case.str().c_str()) != 0) {
+            spdlog::error("Insert fs_judge_case_result failed: {}", mysql_error(pimpl_->conn));
+            mysql_query(pimpl_->conn, "ROLLBACK");
+            return false;
+        }
+    }
+
+    if (mysql_query(pimpl_->conn, "COMMIT") != 0) {
+        spdlog::error("COMMIT failed: {}", mysql_error(pimpl_->conn));
+        mysql_query(pimpl_->conn, "ROLLBACK");
         return false;
     }
 
