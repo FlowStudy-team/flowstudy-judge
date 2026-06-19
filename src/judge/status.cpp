@@ -4,16 +4,16 @@
 
 const char* to_string(JudgeStatus status) {
     switch (status) {
-    case JudgeStatus::Pending:              return "Pending";
-    case JudgeStatus::Compiling:            return "Compiling";
-    case JudgeStatus::Running:              return "Running";
-    case JudgeStatus::Accepted:             return "Accepted";
-    case JudgeStatus::WrongAnswer:          return "WrongAnswer";
-    case JudgeStatus::TimeLimitExceeded:    return "TimeLimitExceeded";
-    case JudgeStatus::MemoryLimitExceeded:  return "MemoryLimitExceeded";
-    case JudgeStatus::RuntimeError:         return "RuntimeError";
-    case JudgeStatus::CompilationError:     return "CompilationError";
-    case JudgeStatus::SystemError:          return "SystemError";
+    case JudgeStatus::Pending:              return "PENDING";
+    case JudgeStatus::Compiling:            return "COMPILING";
+    case JudgeStatus::Running:              return "RUNNING";
+    case JudgeStatus::Accepted:             return "ACCEPTED";
+    case JudgeStatus::WrongAnswer:          return "WRONG_ANSWER";
+    case JudgeStatus::TimeLimitExceeded:    return "TIME_LIMIT_EXCEEDED";
+    case JudgeStatus::MemoryLimitExceeded:  return "MEMORY_LIMIT_EXCEEDED";
+    case JudgeStatus::RuntimeError:         return "RUNTIME_ERROR";
+    case JudgeStatus::CompilationError:     return "COMPILE_ERROR";
+    case JudgeStatus::SystemError:          return "SYSTEM_ERROR";
     }
     return "Unknown";
 }
@@ -36,16 +36,16 @@ const char* to_description(JudgeStatus status) {
 
 JudgeStatus status_from_string(const std::string& s) {
     static const std::unordered_map<std::string, JudgeStatus> map = {
-        {"Pending",             JudgeStatus::Pending},
-        {"Compiling",           JudgeStatus::Compiling},
-        {"Running",             JudgeStatus::Running},
-        {"Accepted",            JudgeStatus::Accepted},
-        {"WrongAnswer",         JudgeStatus::WrongAnswer},
-        {"TimeLimitExceeded",   JudgeStatus::TimeLimitExceeded},
-        {"MemoryLimitExceeded", JudgeStatus::MemoryLimitExceeded},
-        {"RuntimeError",        JudgeStatus::RuntimeError},
-        {"CompilationError",    JudgeStatus::CompilationError},
-        {"SystemError",         JudgeStatus::SystemError},
+        {"PENDING",               JudgeStatus::Pending},
+        {"COMPILING",             JudgeStatus::Compiling},
+        {"RUNNING",               JudgeStatus::Running},
+        {"ACCEPTED",              JudgeStatus::Accepted},
+        {"WRONG_ANSWER",          JudgeStatus::WrongAnswer},
+        {"TIME_LIMIT_EXCEEDED",   JudgeStatus::TimeLimitExceeded},
+        {"MEMORY_LIMIT_EXCEEDED", JudgeStatus::MemoryLimitExceeded},
+        {"RUNTIME_ERROR",         JudgeStatus::RuntimeError},
+        {"COMPILE_ERROR",         JudgeStatus::CompilationError},
+        {"SYSTEM_ERROR",          JudgeStatus::SystemError},
     };
     auto it = map.find(s);
     return (it != map.end()) ? it->second : JudgeStatus::SystemError;

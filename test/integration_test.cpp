@@ -10,17 +10,17 @@ extern void check(const std::string& name, bool condition, const std::string& de
 
 void test_status_conversion() {
     // to_string
-    check("to_string(Accepted)", std::string(to_string(JudgeStatus::Accepted)) == "Accepted");
-    check("to_string(WrongAnswer)", std::string(to_string(JudgeStatus::WrongAnswer)) == "WrongAnswer");
-    check("to_string(TLE)", std::string(to_string(JudgeStatus::TimeLimitExceeded)) == "TimeLimitExceeded");
-    check("to_string(MLE)", std::string(to_string(JudgeStatus::MemoryLimitExceeded)) == "MemoryLimitExceeded");
-    check("to_string(RE)", std::string(to_string(JudgeStatus::RuntimeError)) == "RuntimeError");
-    check("to_string(CE)", std::string(to_string(JudgeStatus::CompilationError)) == "CompilationError");
-    check("to_string(SystemError)", std::string(to_string(JudgeStatus::SystemError)) == "SystemError");
+    check("to_string(Accepted)", std::string(to_string(JudgeStatus::Accepted)) == "ACCEPTED");
+    check("to_string(WrongAnswer)", std::string(to_string(JudgeStatus::WrongAnswer)) == "WRONG_ANSWER");
+    check("to_string(TLE)", std::string(to_string(JudgeStatus::TimeLimitExceeded)) == "TIME_LIMIT_EXCEEDED");
+    check("to_string(MLE)", std::string(to_string(JudgeStatus::MemoryLimitExceeded)) == "MEMORY_LIMIT_EXCEEDED");
+    check("to_string(RE)", std::string(to_string(JudgeStatus::RuntimeError)) == "RUNTIME_ERROR");
+    check("to_string(CE)", std::string(to_string(JudgeStatus::CompilationError)) == "COMPILE_ERROR");
+    check("to_string(SystemError)", std::string(to_string(JudgeStatus::SystemError)) == "SYSTEM_ERROR");
 
     // status_from_string
-    check("from_string -> Accepted", status_from_string("Accepted") == JudgeStatus::Accepted);
-    check("from_string -> WrongAnswer", status_from_string("WrongAnswer") == JudgeStatus::WrongAnswer);
+    check("from_string -> Accepted", status_from_string("ACCEPTED") == JudgeStatus::Accepted);
+    check("from_string -> WrongAnswer", status_from_string("WRONG_ANSWER") == JudgeStatus::WrongAnswer);
     check("from_string -> Unknown", status_from_string("NotAStatus") == JudgeStatus::SystemError);
 
     // to_description
@@ -56,8 +56,8 @@ void test_parse_message() {
         "time_limit": 1000,
         "memory_limit": 262144,
         "testcases": [
-            {"input": "1 2", "expected_output": "3"},
-            {"input": "5 7", "expected_output": "12"}
+            {"testcase_id": 11, "case_index": 1, "input": "1 2", "expected_output": "3"},
+            {"testcase_id": 12, "case_index": 2, "input": "5 7", "expected_output": "12"}
         ]
     })";
 
@@ -69,6 +69,8 @@ void test_parse_message() {
         check("problem_id", msg.problem_id == 100);
         check("language", msg.language == "cpp");
         check("testcases count", msg.testcases.size() == 2);
+        check("tc[0] id", msg.testcases[0].testcase_id == 11);
+        check("tc[1] index", msg.testcases[1].case_index == 2);
         check("tc[0] input", msg.testcases[0].input == "1 2");
         check("tc[1] expected", msg.testcases[1].expected_output == "12");
         check("defaults", msg.time_limit_ms == 1000 && msg.memory_limit_kb == 262144);
@@ -99,7 +101,7 @@ void test_config_loading() {
     AppConfig default_cfg;
     check("default rabbitmq host", default_cfg.rabbitmq.hostname == "127.0.0.1");
     check("default rabbitmq port", default_cfg.rabbitmq.port == 5672);
-    check("default mysql db", default_cfg.mysql.database == "online_judge");
+    check("default mysql db", default_cfg.mysql.database == "flowstudy");
     check("default isolate bin", default_cfg.isolate.binary_path == "/usr/local/bin/isolate");
     check("default boxes", default_cfg.isolate.num_boxes == 5);
     check("default concurrency", default_cfg.judge.concurrency == 1);
