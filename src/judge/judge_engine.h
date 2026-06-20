@@ -23,6 +23,7 @@ struct SubmissionMessage {
     uint64_t submission_id = 0;
     uint64_t problem_id = 0;
     std::string language;
+    std::string submit_mode = "FULL_PROGRAM";
     std::string code;
     int time_limit_ms = 1000;
     int memory_limit_kb = 262144;

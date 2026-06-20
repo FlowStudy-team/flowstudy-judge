@@ -70,8 +70,9 @@ void Worker::on_message(uint64_t delivery_tag, const std::string& body) {
     }
 
     auto& submission = *submission_opt;
-    spdlog::info("[{}] Judging problem {}, {} testcases",
+    spdlog::info("[{}] Judging problem {}, language={}, mode={}, {} testcases",
                  submission.submission_id, submission.problem_id,
+                 submission.language, submission.submit_mode,
                  submission.testcases.size());
 
     // Judge
@@ -80,6 +81,7 @@ void Worker::on_message(uint64_t delivery_tag, const std::string& body) {
     // Build DB result
     JudgeResult db_result;
     db_result.submission_id = submission.submission_id;
+    db_result.problem_id = submission.problem_id;
     db_result.status = to_string(result.status);
     db_result.time_used_ms = result.time_used_ms;
     db_result.memory_used_kb = result.memory_used_kb;
