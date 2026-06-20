@@ -1,10 +1,10 @@
 #include "judge/sandbox.h"
 
-#include <cstdio>
-#include <cstdlib>
 #include <algorithm>
 #include <cerrno>
 #include <cctype>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <fstream>
 #include <sstream>
@@ -30,7 +30,6 @@ bool Sandbox::init() {
         spdlog::error("Failed to init sandbox {}", box_id_);
         return false;
     }
-    // Ensure box directory exists and is writable
     if (mkdir(box_path_.c_str(), 0755) != 0 && errno != EEXIST) {
         spdlog::warn("Cannot create box directory {}: {}", box_path_, strerror(errno));
     }
@@ -57,7 +56,6 @@ bool Sandbox::write_file(const std::string& filename, const std::string& content
     }
     f << content;
     f.close();
-    // Make sure the file is readable inside the sandbox
     chmod(path.c_str(), 0644);
     return true;
 }
@@ -75,7 +73,6 @@ SandboxResult Sandbox::execute(const std::vector<std::string>& args,
                                const std::string& meta_filename) {
     SandboxResult result;
 
-    // Build command string with --meta inserted before --run
     std::ostringstream cmd;
     cmd << isolate_bin_;
     bool meta_added = false;
@@ -86,7 +83,6 @@ SandboxResult Sandbox::execute(const std::vector<std::string>& args,
         }
         cmd << " " << a;
     }
-    // If --run was not found (shouldn't happen), add meta anyway
     if (!meta_added) {
         cmd << " --meta=" << box_path_ + meta_filename;
     }
@@ -94,7 +90,6 @@ SandboxResult Sandbox::execute(const std::vector<std::string>& args,
     spdlog::debug("Running isolate: {}", cmd.str());
 
     int ret = std::system(cmd.str().c_str());
-
     if (ret == -1) {
         result.exit_code = -1;
         result.stderr_output = "Failed to execute isolate binary";
@@ -102,14 +97,10 @@ SandboxResult Sandbox::execute(const std::vector<std::string>& args,
         return result;
     }
 
-    // Parse the meta file
     std::string meta_path = box_path_ + meta_filename;
     result = parse_meta(meta_path);
-
-    // Read stdout/stderr from box
     result.stdout_output = read_file("output.txt");
     result.stderr_output = read_file("error.txt");
-
     return result;
 }
 
@@ -177,12 +168,26 @@ SandboxResult Sandbox::compile(const std::string& language,
         args = {
             "--box-id=" + std::to_string(box_id_),
             "--env=PATH=/usr/bin:/bin",
-            "--processes=50",
+            "--dir=/etc/alternatives",
+            "--dir=/etc/java-17-openjdk",
+            "--dir=/usr/lib/jvm",
+            "--processes=256",
+            "--mem=2097152",
             "--wall-time=30",
             "--stderr=error.txt",
             "--run",
             "--",
             "/usr/bin/javac",
+            "-J-Xms16m",
+            "-J-Xmx128m",
+            "-J-Xss256k",
+            "-J-Xint",
+            "-J-XX:+UseSerialGC",
+            "-J-XX:ActiveProcessorCount=1",
+            "-J-XX:-UseCompressedOops",
+            "-J-XX:-UseCompressedClassPointers",
+            "-J-XX:ReservedCodeCacheSize=32m",
+            "-J-XX:MaxMetaspaceSize=128m",
             source_file
         };
     } else if (normalized == "python") {
@@ -251,18 +256,15 @@ SandboxResult Sandbox::compile(const std::string& language,
     }
 
     auto result = execute(args, "compile_meta.txt");
-
-    // If stderr is empty from meta, re-read from file
     if (result.stderr_output.empty()) {
         result.stderr_output = read_file("error.txt");
     }
-
     return result;
 }
 
 SandboxResult Sandbox::run(const std::string& language,
                            int time_limit_ms,
-                           int /*memory_limit_kb*/,
+                           int memory_limit_kb,
                            const std::string& stdin_input) {
     if (!write_file("input.txt", stdin_input)) {
         SandboxResult r;
@@ -272,7 +274,6 @@ SandboxResult Sandbox::run(const std::string& language,
         return r;
     }
 
-    // wall-time set to 2x the CPU time limit, minimum 5 seconds
     double wall_time = std::max(5.0, time_limit_ms / 1000.0 * 2.0);
     std::string normalized = normalize_language(language);
     std::vector<std::string> command;
@@ -280,7 +281,22 @@ SandboxResult Sandbox::run(const std::string& language,
     if (normalized == "cpp" || normalized == "go") {
         command = {"./solution"};
     } else if (normalized == "java") {
-        command = {"/usr/bin/java", "-cp", ".", java_main_class_};
+        command = {
+            "/usr/bin/java",
+            "-Xms16m",
+            "-Xmx128m",
+            "-Xss256k",
+            "-Xint",
+            "-XX:+UseSerialGC",
+            "-XX:ActiveProcessorCount=1",
+            "-XX:-UseCompressedOops",
+            "-XX:-UseCompressedClassPointers",
+            "-XX:ReservedCodeCacheSize=32m",
+            "-XX:MaxMetaspaceSize=128m",
+            "-cp",
+            ".",
+            java_main_class_
+        };
     } else if (normalized == "python") {
         command = {"/usr/bin/python3", "solution.py"};
     } else {
@@ -290,12 +306,17 @@ SandboxResult Sandbox::run(const std::string& language,
         r.status = "XX";
         return r;
     }
-    std::string process_limit = normalized == "cpp" ? "1" : "64";
+
+    std::string process_limit = normalized == "cpp" ? "1" : (normalized == "java" ? "256" : "64");
+    int isolate_memory_kb = normalized == "java"
+        ? std::max(memory_limit_kb, 2097152)
+        : memory_limit_kb;
 
     std::vector<std::string> args = {
         "--box-id=" + std::to_string(box_id_),
         "--env=PATH=/usr/local/go/bin:/usr/bin:/bin",
         "--processes=" + process_limit,
+        "--mem=" + std::to_string(isolate_memory_kb),
         "--wall-time=" + std::to_string(wall_time),
         "--stdin=input.txt",
         "--stdout=output.txt",
@@ -303,12 +324,17 @@ SandboxResult Sandbox::run(const std::string& language,
         "--run",
         "--"
     };
+    if (normalized == "java") {
+        args.insert(args.begin() + 3, {
+            "--dir=/etc/alternatives",
+            "--dir=/etc/java-17-openjdk",
+            "--dir=/usr/lib/jvm"
+        });
+    }
     args.insert(args.end(), command.begin(), command.end());
 
     auto result = execute(args, "run_meta.txt");
-
     result.timed_out = (result.status == "TO");
-
     return result;
 }
 
@@ -332,10 +358,8 @@ SandboxResult Sandbox::parse_meta(const std::string& meta_path) {
         std::string val = line.substr(colon + 1);
 
         if (key == "time") {
-            // time in seconds, convert to ms
             result.time_used_ms = static_cast<int>(std::stod(val) * 1000);
         } else if (key == "time-wall") {
-            // wall time, use for timeout detection if larger
             int wall_ms = static_cast<int>(std::stod(val) * 1000);
             if (wall_ms > result.time_used_ms) {
                 result.time_used_ms = wall_ms;
@@ -351,7 +375,6 @@ SandboxResult Sandbox::parse_meta(const std::string& meta_path) {
         } else if (key == "exitsig") {
             result.signal_num = std::stoi(val);
         } else if (key == "killed") {
-            // isolate killed the process
             result.timed_out = true;
         }
     }
