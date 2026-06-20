@@ -52,6 +52,7 @@ void test_parse_message() {
         "submission_id": 12345,
         "problem_id": 100,
         "language": "cpp",
+        "submit_mode": "FULL_PROGRAM",
         "code": "#include <iostream>\nint main() { return 0; }",
         "time_limit": 1000,
         "memory_limit": 262144,
@@ -68,6 +69,7 @@ void test_parse_message() {
         check("submission_id", msg.submission_id == 12345);
         check("problem_id", msg.problem_id == 100);
         check("language", msg.language == "cpp");
+        check("submit_mode", msg.submit_mode == "FULL_PROGRAM");
         check("testcases count", msg.testcases.size() == 2);
         check("tc[0] id", msg.testcases[0].testcase_id == 11);
         check("tc[1] index", msg.testcases[1].case_index == 2);

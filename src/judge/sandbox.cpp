@@ -2,6 +2,10 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <algorithm>
+#include <cerrno>
+#include <cctype>
+#include <cstring>
 #include <fstream>
 #include <sstream>
 #include <spdlog/spdlog.h>
@@ -109,31 +113,142 @@ SandboxResult Sandbox::execute(const std::vector<std::string>& args,
     return result;
 }
 
-SandboxResult Sandbox::compile(const std::string& source_code) {
-    if (!write_file("solution.cpp", source_code)) {
+std::string Sandbox::normalize_language(const std::string& language) {
+    std::string normalized = language;
+    std::transform(normalized.begin(), normalized.end(), normalized.begin(),
+                   [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+    if (normalized == "c++") return "cpp";
+    if (normalized == "py") return "python";
+    return normalized;
+}
+
+std::string Sandbox::java_class_name(const std::string& source_code) {
+    const std::string marker = "public class ";
+    auto pos = source_code.find(marker);
+    if (pos != std::string::npos) {
+        pos += marker.size();
+        while (pos < source_code.size() && std::isspace(static_cast<unsigned char>(source_code[pos]))) {
+            pos++;
+        }
+        std::string class_name;
+        while (pos < source_code.size()) {
+            unsigned char ch = static_cast<unsigned char>(source_code[pos]);
+            if (!std::isalnum(ch) && ch != '_') {
+                break;
+            }
+            class_name.push_back(static_cast<char>(ch));
+            pos++;
+        }
+        if (!class_name.empty()) {
+            return class_name;
+        }
+    }
+    return "Main";
+}
+
+SandboxResult Sandbox::compile(const std::string& language,
+                               const std::string& source_code) {
+    std::string normalized = normalize_language(language);
+    std::vector<std::string> args;
+    std::string source_file;
+
+    if (normalized == "cpp") {
+        source_file = "solution.cpp";
+        args = {
+            "--box-id=" + std::to_string(box_id_),
+            "--env=PATH=/usr/bin:/bin",
+            "--processes=50",
+            "--wall-time=30",
+            "--stderr=error.txt",
+            "--run",
+            "--",
+            "/usr/bin/g++",
+            "-std=c++17",
+            "-O2",
+            "-Wall",
+            "-o",
+            "solution",
+            source_file
+        };
+    } else if (normalized == "java") {
+        std::string class_name = java_class_name(source_code);
+        java_main_class_ = class_name;
+        source_file = class_name + ".java";
+        args = {
+            "--box-id=" + std::to_string(box_id_),
+            "--env=PATH=/usr/bin:/bin",
+            "--processes=50",
+            "--wall-time=30",
+            "--stderr=error.txt",
+            "--run",
+            "--",
+            "/usr/bin/javac",
+            source_file
+        };
+    } else if (normalized == "python") {
+        source_file = "solution.py";
+        args = {
+            "--box-id=" + std::to_string(box_id_),
+            "--env=PATH=/usr/bin:/bin",
+            "--processes=20",
+            "--wall-time=10",
+            "--stderr=error.txt",
+            "--run",
+            "--",
+            "/usr/bin/python3",
+            "-m",
+            "py_compile",
+            source_file
+        };
+    } else if (normalized == "go") {
+        source_file = "main.go";
+        std::string tmp_path = box_path_ + "tmp";
+        if (mkdir(tmp_path.c_str(), 0755) != 0 && errno != EEXIST) {
+            SandboxResult r;
+            r.exit_code = -1;
+            r.stderr_output = "Failed to create Go temp directory";
+            r.status = "XX";
+            return r;
+        }
+        std::string go_cache_path = tmp_path + "/go-cache";
+        if (mkdir(go_cache_path.c_str(), 0755) != 0 && errno != EEXIST) {
+            SandboxResult r;
+            r.exit_code = -1;
+            r.stderr_output = "Failed to create Go build cache directory";
+            r.status = "XX";
+            return r;
+        }
+        args = {
+            "--box-id=" + std::to_string(box_id_),
+            "--env=PATH=/usr/local/go/bin:/usr/bin:/bin",
+            "--env=GOCACHE=/tmp/go-cache",
+            "--processes=50",
+            "--wall-time=30",
+            "--stderr=error.txt",
+            "--run",
+            "--",
+            "/usr/bin/env",
+            "go",
+            "build",
+            "-o",
+            "solution",
+            source_file
+        };
+    } else {
         SandboxResult r;
         r.exit_code = -1;
-        r.stderr_output = "Failed to write source file";
+        r.stderr_output = "Unsupported language: " + language;
         r.status = "XX";
         return r;
     }
 
-    std::vector<std::string> args = {
-        "--box-id=" + std::to_string(box_id_),
-        "--env=PATH=/usr/bin:/bin",
-        "--processes=50",
-        "--wall-time=30",
-        "--stderr=error.txt",
-        "--run",
-        "--",
-        "/usr/bin/g++",
-        "-std=c++17",
-        "-O2",
-        "-Wall",
-        "-o",
-        "solution",
-        "solution.cpp"
-    };
+    if (!write_file(source_file, source_code)) {
+        SandboxResult r;
+        r.exit_code = -1;
+        r.stderr_output = "Failed to write source file: " + source_file;
+        r.status = "XX";
+        return r;
+    }
 
     auto result = execute(args, "compile_meta.txt");
 
@@ -145,7 +260,9 @@ SandboxResult Sandbox::compile(const std::string& source_code) {
     return result;
 }
 
-SandboxResult Sandbox::run(int time_limit_ms, int /*memory_limit_kb*/,
+SandboxResult Sandbox::run(const std::string& language,
+                           int time_limit_ms,
+                           int /*memory_limit_kb*/,
                            const std::string& stdin_input) {
     if (!write_file("input.txt", stdin_input)) {
         SandboxResult r;
@@ -157,19 +274,36 @@ SandboxResult Sandbox::run(int time_limit_ms, int /*memory_limit_kb*/,
 
     // wall-time set to 2x the CPU time limit, minimum 5 seconds
     double wall_time = std::max(5.0, time_limit_ms / 1000.0 * 2.0);
+    std::string normalized = normalize_language(language);
+    std::vector<std::string> command;
+
+    if (normalized == "cpp" || normalized == "go") {
+        command = {"./solution"};
+    } else if (normalized == "java") {
+        command = {"/usr/bin/java", "-cp", ".", java_main_class_};
+    } else if (normalized == "python") {
+        command = {"/usr/bin/python3", "solution.py"};
+    } else {
+        SandboxResult r;
+        r.exit_code = -1;
+        r.stderr_output = "Unsupported language: " + language;
+        r.status = "XX";
+        return r;
+    }
+    std::string process_limit = normalized == "cpp" ? "1" : "64";
 
     std::vector<std::string> args = {
         "--box-id=" + std::to_string(box_id_),
-        "--env=PATH=/usr/bin:/bin",
-        "--processes=1",
+        "--env=PATH=/usr/local/go/bin:/usr/bin:/bin",
+        "--processes=" + process_limit,
         "--wall-time=" + std::to_string(wall_time),
         "--stdin=input.txt",
         "--stdout=output.txt",
         "--stderr=error.txt",
         "--run",
-        "--",
-        "./solution"
+        "--"
     };
+    args.insert(args.end(), command.begin(), command.end());
 
     auto result = execute(args, "run_meta.txt");
 

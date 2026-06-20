@@ -19,6 +19,7 @@ struct JudgeCaseResult {
 
 struct JudgeResult {
     uint64_t submission_id = 0;
+    uint64_t problem_id = 0;
     std::string status;
     int time_used_ms = 0;
     int memory_used_kb = 0;

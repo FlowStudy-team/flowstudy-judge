@@ -132,6 +132,17 @@ bool MySQLClient::update_submission(const JudgeResult& result) {
         }
     }
 
+    if (result.status == "ACCEPTED" && result.problem_id != 0) {
+        std::ostringstream update_problem;
+        update_problem << "UPDATE fs_problem SET accepted_count = accepted_count + 1 "
+                       << "WHERE id = " << result.problem_id;
+        if (mysql_query(pimpl_->conn, update_problem.str().c_str()) != 0) {
+            spdlog::error("Update fs_problem accepted_count failed: {}", mysql_error(pimpl_->conn));
+            mysql_query(pimpl_->conn, "ROLLBACK");
+            return false;
+        }
+    }
+
     if (mysql_query(pimpl_->conn, "COMMIT") != 0) {
         spdlog::error("COMMIT failed: {}", mysql_error(pimpl_->conn));
         mysql_query(pimpl_->conn, "ROLLBACK");

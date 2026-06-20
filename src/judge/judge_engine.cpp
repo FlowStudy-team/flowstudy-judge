@@ -61,6 +61,7 @@ std::optional<SubmissionMessage> JudgeEngine::parse_message(
         msg.submission_id = j.at("submission_id");
         msg.problem_id = j.at("problem_id");
         msg.language = j.value("language", "cpp");
+        msg.submit_mode = j.value("submit_mode", "FULL_PROGRAM");
         msg.code = j.at("code");
         msg.time_limit_ms = j.value("time_limit", 1000);
         msg.memory_limit_kb = j.value("memory_limit", 262144);
@@ -97,7 +98,7 @@ JudgeResultInternal JudgeEngine::judge(const SubmissionMessage& submission) {
 
     // === Compile ===
     spdlog::info("[{}] Compiling...", submission.submission_id);
-    auto compile_result = tmp_sandbox.compile(submission.code);
+    auto compile_result = tmp_sandbox.compile(submission.language, submission.code);
 
     if (compile_result.exit_code != 0) {
         result.status = JudgeStatus::CompilationError;
@@ -121,7 +122,8 @@ JudgeResultInternal JudgeEngine::judge(const SubmissionMessage& submission) {
         spdlog::info("[{}] Running testcase {}/{}", submission.submission_id,
                      i + 1, submission.testcases.size());
 
-        auto run_result = tmp_sandbox.run(submission.time_limit_ms,
+        auto run_result = tmp_sandbox.run(submission.language,
+                                          submission.time_limit_ms,
                                           submission.memory_limit_kb,
                                           tc.input);
 
