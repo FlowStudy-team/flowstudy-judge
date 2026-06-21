@@ -49,6 +49,7 @@ void test_compare_output() {
 
 void test_parse_message() {
     std::string valid_json = R"({
+        "task_type": "SUBMISSION",
         "submission_id": 12345,
         "problem_id": 100,
         "language": "cpp",
@@ -66,6 +67,7 @@ void test_parse_message() {
     check("parse valid msg", result.has_value());
     if (result) {
         auto& msg = *result;
+        check("task_type", msg.task_type == "SUBMISSION");
         check("submission_id", msg.submission_id == 12345);
         check("problem_id", msg.problem_id == 100);
         check("language", msg.language == "cpp");
@@ -76,6 +78,28 @@ void test_parse_message() {
         check("tc[0] input", msg.testcases[0].input == "1 2");
         check("tc[1] expected", msg.testcases[1].expected_output == "12");
         check("defaults", msg.time_limit_ms == 1000 && msg.memory_limit_kb == 262144);
+    }
+
+    std::string run_json = R"({
+        "task_type": "RUN",
+        "run_id": 99,
+        "submission_id": null,
+        "problem_id": 100,
+        "language": "java",
+        "submit_mode": "FULL_PROGRAM",
+        "code": "public class Main { public static void main(String[] args) {} }",
+        "testcases": [
+            {"testcase_id": null, "case_index": 1, "input": "", "expected_output": ""}
+        ]
+    })";
+    auto run = JudgeEngine::parse_message(run_json);
+    check("parse run msg", run.has_value());
+    if (run) {
+        check("run task_type", run->task_type == "RUN");
+        check("run_id", run->run_id == 99);
+        check("run submission default", run->submission_id == 0);
+        check("run task_id", run->task_id() == 99);
+        check("run null testcase_id", run->testcases[0].testcase_id == 0);
     }
 
     // Invalid JSON

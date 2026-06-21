@@ -12,12 +12,14 @@ struct JudgeCaseResult {
     std::string status;
     int time_used_ms = 0;
     int memory_used_kb = 0;
+    std::string input_text;
     std::string actual_output;
     std::string expected_output;
     std::string error_message;
 };
 
 struct JudgeResult {
+    uint64_t run_id = 0;
     uint64_t submission_id = 0;
     uint64_t problem_id = 0;
     std::string status;
@@ -41,6 +43,7 @@ public:
 
     bool connect();
     bool update_submission(const JudgeResult& result);
+    bool update_code_run(const JudgeResult& result);
     bool ping();
 
 private:
