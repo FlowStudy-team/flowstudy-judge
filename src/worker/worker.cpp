@@ -70,8 +70,8 @@ void Worker::on_message(uint64_t delivery_tag, const std::string& body) {
     }
 
     auto& submission = *submission_opt;
-    spdlog::info("[{}] Judging problem {}, language={}, mode={}, {} testcases",
-                 submission.submission_id, submission.problem_id,
+    spdlog::info("[{}] Judging task={}, problem {}, language={}, mode={}, {} testcases",
+                 submission.task_id(), submission.task_type, submission.problem_id,
                  submission.language, submission.submit_mode,
                  submission.testcases.size());
 
@@ -80,6 +80,7 @@ void Worker::on_message(uint64_t delivery_tag, const std::string& body) {
 
     // Build DB result
     JudgeResult db_result;
+    db_result.run_id = submission.run_id;
     db_result.submission_id = submission.submission_id;
     db_result.problem_id = submission.problem_id;
     db_result.status = to_string(result.status);
@@ -95,6 +96,7 @@ void Worker::on_message(uint64_t delivery_tag, const std::string& body) {
         case_result.status = to_string(item.status);
         case_result.time_used_ms = item.time_used_ms;
         case_result.memory_used_kb = item.memory_used_kb;
+        case_result.input_text = item.input_text;
         case_result.actual_output = item.actual_output;
         case_result.expected_output = item.expected_output;
         case_result.error_message = item.error_message;
@@ -105,15 +107,18 @@ void Worker::on_message(uint64_t delivery_tag, const std::string& body) {
     db_->ping();
 
     // Write to database
-    if (!db_->update_submission(db_result)) {
+    bool db_updated = submission.task_type == "RUN"
+        ? db_->update_code_run(db_result)
+        : db_->update_submission(db_result);
+    if (!db_updated) {
         spdlog::error("[{}] Failed to update DB, nack with requeue",
-                      submission.submission_id);
+                      submission.task_id());
         mq_->nack_requeue(delivery_tag);
         return;
     }
 
     // ACK the message
     mq_->ack(delivery_tag);
-    spdlog::info("[{}] Done: {}", submission.submission_id,
+    spdlog::info("[{}] Done: {}", submission.task_id(),
                  to_string(result.status));
 }

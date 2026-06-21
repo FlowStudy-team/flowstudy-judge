@@ -58,7 +58,13 @@ std::optional<SubmissionMessage> JudgeEngine::parse_message(
         nlohmann::json j = nlohmann::json::parse(json_str);
         SubmissionMessage msg;
 
-        msg.submission_id = j.at("submission_id");
+        msg.task_type = j.value("task_type", "SUBMISSION");
+        if (j.contains("run_id") && !j["run_id"].is_null()) {
+            msg.run_id = j["run_id"].get<uint64_t>();
+        }
+        if (j.contains("submission_id") && !j["submission_id"].is_null()) {
+            msg.submission_id = j["submission_id"].get<uint64_t>();
+        }
         msg.problem_id = j.at("problem_id");
         msg.language = j.value("language", "cpp");
         msg.submit_mode = j.value("submit_mode", "FULL_PROGRAM");
@@ -68,7 +74,9 @@ std::optional<SubmissionMessage> JudgeEngine::parse_message(
 
         for (const auto& tc : j.at("testcases")) {
             TestCase t;
-            t.testcase_id = tc.value("testcase_id", 0);
+            if (tc.contains("testcase_id") && !tc["testcase_id"].is_null()) {
+                t.testcase_id = tc["testcase_id"].get<uint64_t>();
+            }
             t.case_index = tc.value("case_index", static_cast<int>(msg.testcases.size()) + 1);
             t.input = tc.at("input");
             t.expected_output = tc.at("expected_output");
@@ -97,14 +105,14 @@ JudgeResultInternal JudgeEngine::judge(const SubmissionMessage& submission) {
     Sandbox tmp_sandbox(box_id, isolate_cfg_);
 
     // === Compile ===
-    spdlog::info("[{}] Compiling...", submission.submission_id);
+    spdlog::info("[{}] Compiling...", submission.task_id());
     auto compile_result = tmp_sandbox.compile(submission.language, submission.code);
 
     if (compile_result.exit_code != 0) {
         result.status = JudgeStatus::CompilationError;
         result.compiler_output = compile_result.stderr_output;
         result.error_message = compile_result.stderr_output;
-        spdlog::info("[{}] Compilation error", submission.submission_id);
+        spdlog::info("[{}] Compilation error", submission.task_id());
         box_pool_.release(box_id);
         return result;
     }
@@ -118,8 +126,9 @@ JudgeResultInternal JudgeEngine::judge(const SubmissionMessage& submission) {
         JudgeCaseResultInternal case_result;
         case_result.testcase_id = tc.testcase_id;
         case_result.case_index = tc.case_index > 0 ? tc.case_index : static_cast<int>(i) + 1;
+        case_result.input_text = tc.input;
         case_result.expected_output = tc.expected_output;
-        spdlog::info("[{}] Running testcase {}/{}", submission.submission_id,
+        spdlog::info("[{}] Running testcase {}/{}", submission.task_id(),
                      i + 1, submission.testcases.size());
 
         auto run_result = tmp_sandbox.run(submission.language,
@@ -149,7 +158,7 @@ JudgeResultInternal JudgeEngine::judge(const SubmissionMessage& submission) {
             case_result.error_message = result.error_message;
             result.case_results.push_back(std::move(case_result));
             spdlog::info("[{}] Time limit exceeded on testcase {}",
-                         submission.submission_id, i + 1);
+                         submission.task_id(), i + 1);
             box_pool_.release(box_id);
             return result;
         }
@@ -165,7 +174,7 @@ JudgeResultInternal JudgeEngine::judge(const SubmissionMessage& submission) {
             case_result.status = JudgeStatus::MemoryLimitExceeded;
             case_result.error_message = result.error_message;
             result.case_results.push_back(std::move(case_result));
-            spdlog::info("[{}] Memory limit exceeded", submission.submission_id);
+            spdlog::info("[{}] Memory limit exceeded", submission.task_id());
             box_pool_.release(box_id);
             return result;
         }
@@ -189,7 +198,7 @@ JudgeResultInternal JudgeEngine::judge(const SubmissionMessage& submission) {
             case_result.status = JudgeStatus::RuntimeError;
             case_result.error_message = result.error_message;
             result.case_results.push_back(std::move(case_result));
-            spdlog::info("[{}] Runtime error on testcase {}", submission.submission_id, i + 1);
+            spdlog::info("[{}] Runtime error on testcase {}", submission.task_id(), i + 1);
             box_pool_.release(box_id);
             return result;
         }
@@ -204,7 +213,7 @@ JudgeResultInternal JudgeEngine::judge(const SubmissionMessage& submission) {
             case_result.status = JudgeStatus::WrongAnswer;
             case_result.error_message = result.error_message;
             result.case_results.push_back(std::move(case_result));
-            spdlog::info("[{}] Wrong answer on testcase {}", submission.submission_id, i + 1);
+            spdlog::info("[{}] Wrong answer on testcase {}", submission.task_id(), i + 1);
             spdlog::debug("  Expected: '{}'", tc.expected_output);
             spdlog::debug("  Got:      '{}'", run_result.stdout_output);
             box_pool_.release(box_id);
@@ -220,7 +229,7 @@ JudgeResultInternal JudgeEngine::judge(const SubmissionMessage& submission) {
     result.time_used_ms = max_time_ms;
     result.memory_used_kb = max_memory_kb;
     spdlog::info("[{}] Accepted (time: {}ms, memory: {}KB)",
-                 submission.submission_id, max_time_ms, max_memory_kb);
+                 submission.task_id(), max_time_ms, max_memory_kb);
     box_pool_.release(box_id);
     return result;
 }

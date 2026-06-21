@@ -20,6 +20,8 @@ struct TestCase {
 };
 
 struct SubmissionMessage {
+    std::string task_type = "SUBMISSION";
+    uint64_t run_id = 0;
     uint64_t submission_id = 0;
     uint64_t problem_id = 0;
     std::string language;
@@ -28,6 +30,10 @@ struct SubmissionMessage {
     int time_limit_ms = 1000;
     int memory_limit_kb = 262144;
     std::vector<TestCase> testcases;
+
+    uint64_t task_id() const {
+        return task_type == "RUN" ? run_id : submission_id;
+    }
 };
 
 struct JudgeCaseResultInternal {
@@ -36,6 +42,7 @@ struct JudgeCaseResultInternal {
     JudgeStatus status = JudgeStatus::SystemError;
     int time_used_ms = 0;
     int memory_used_kb = 0;
+    std::string input_text;
     std::string actual_output;
     std::string expected_output;
     std::string error_message;
